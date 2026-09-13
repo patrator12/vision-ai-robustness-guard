@@ -10,41 +10,39 @@ import numpy as np
 import cv2
 from PIL import Image, ImageEnhance
 
+def ensure_rgb(image: Image.Image) -> Image.Image:
+    """Ensures image is in 3-channel RGB format (removes alpha/grayscale issues)."""
+    if image.mode != "RGB":
+        return image.convert("RGB")
+    return image
+
 def apply_defocus_blur(image: Image.Image, severity: int) -> Image.Image:
-    """
-    Simulates out-of-focus camera lens, motion, or rain on windshield.
-    Severity: 0 (none) to 10 (heavy blur)
-    """
+    """Simulates out-of-focus camera lens, motion, or rain on windshield."""
     if severity <= 0:
         return image
     
-    # Kernel size must be odd
+    image = ensure_rgb(image)
     kernel_size = severity * 4 + 1
     np_img = np.array(image)
     blurred = cv2.GaussianBlur(np_img, (kernel_size, kernel_size), sigmaX=severity * 1.5)
     return Image.fromarray(blurred)
 
 def apply_low_light(image: Image.Image, severity: int) -> Image.Image:
-    """
-    Simulates dark, night-time, or tunnel conditions.
-    Severity: 0 (normal) to 10 (pitch dark)
-    """
+    """Simulates dark, night-time, or tunnel conditions."""
     if severity <= 0:
         return image
     
-    # Scale factor from 1.0 (normal) down to 0.05 (very dark)
+    image = ensure_rgb(image)
     factor = max(0.05, 1.0 - (severity * 0.095))
     enhancer = ImageEnhance.Brightness(image)
     return enhancer.enhance(factor)
 
 def apply_sensor_noise(image: Image.Image, severity: int) -> Image.Image:
-    """
-    Simulates cheap CCTV / drone CMOS sensor static / ISO noise.
-    Severity: 0 (clean) to 10 (heavy static)
-    """
+    """Simulates cheap CCTV / drone CMOS sensor static / ISO noise."""
     if severity <= 0:
         return image
     
+    image = ensure_rgb(image)
     np_img = np.array(image).astype(np.float32)
     noise_sigma = severity * 12.0
     gauss = np.random.normal(0, noise_sigma, np_img.shape)
@@ -53,7 +51,7 @@ def apply_sensor_noise(image: Image.Image, severity: int) -> Image.Image:
 
 def apply_all_corruptions(image: Image.Image, blur: int = 0, darkness: int = 0, noise: int = 0) -> Image.Image:
     """Applies a combination of environmental corruptions in sequence."""
-    img = image.copy()
+    img = ensure_rgb(image.copy())
     if blur > 0:
         img = apply_defocus_blur(img, blur)
     if darkness > 0:
@@ -69,17 +67,13 @@ def analyze_image_quality(image: Image.Image) -> dict:
     - Mean Luminance (Brightness metric)
     - Noise Estimate
     """
+    image = ensure_rgb(image)
     np_img = np.array(image)
-    if len(np_img.shape) == 3:
-        gray = cv2.cvtColor(np_img, cv2.COLOR_RGB2GRAY)
-    else:
-        gray = np_img
+    gray = cv2.cvtColor(np_img, cv2.COLOR_RGB2GRAY)
         
-    # Variance of Laplacian: lower value = more blurry
-    laplacian_var = cv2.Laplacian(gray, cv2.CV_64F).var()
+    laplacian_var = float(cv2.Laplacian(gray, cv2.CV_64F).var())
     mean_brightness = float(np.mean(gray))
     
-    # Estimate noise from high-frequency residuals
     blurred_gray = cv2.GaussianBlur(gray, (5, 5), 0)
     noise_est = float(np.std(gray.astype(np.float32) - blurred_gray.astype(np.float32)))
     
